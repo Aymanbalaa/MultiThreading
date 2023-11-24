@@ -1,34 +1,41 @@
 package ca.concordia.server;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URLDecoder;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-//create the WebServer class to receive connections on port 5000. Each connection is handled by a master thread that puts the descriptor in a bounded buffer. A pool of worker threads take jobs from this buffer if there are any to handle the connection.
 public class WebServer {
 
-    public void start() throws java.io.IOException{
-        //Create a server socket
+    private ExecutorService executorService;
+
+    public WebServer(int poolSize) {
+        this.executorService = Executors.newFixedThreadPool(poolSize);
+    }
+
+    public void start() throws IOException {
         ServerSocket serverSocket = new ServerSocket(5000);
-        while(true){
-            System.out.println("Waiting for a client to connect...");
-            //Accept a connection from a client
+        while (true) {
             Socket clientSocket = serverSocket.accept();
-            System.out.println("New client...");
+            System.out.println("New client connected...");
+
+            // Use a worker thread to handle the connection
+            executorService.submit(() -> handleConnection(clientSocket));
+        }
+    }
+
+    private void handleConnection(Socket clientSocket) {
+        try {
             BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
             OutputStream out = clientSocket.getOutputStream();
 
             String request = in.readLine();
             if (request != null) {
                 if (request.startsWith("GET")) {
-                    // Handle GET request
                     handleGetRequest(out);
                 } else if (request.startsWith("POST")) {
-                    // Handle POST request
                     handlePostRequest(in, out);
                 }
             }
@@ -36,11 +43,12 @@ public class WebServer {
             in.close();
             out.close();
             clientSocket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
-    private static void handleGetRequest(OutputStream out) throws IOException {
-        // Respond with a basic HTML page
+    private void handleGetRequest(OutputStream out) throws IOException {
         System.out.println("Handling GET request");
         String response = "HTTP/1.1 200 OK\r\n\r\n" +
                 "<!DOCTYPE html>\n" +
@@ -74,7 +82,7 @@ public class WebServer {
         out.flush();
     }
 
-    private static void handlePostRequest(BufferedReader in, OutputStream out) throws IOException {
+    private void handlePostRequest(BufferedReader in, OutputStream out) throws IOException {
         System.out.println("Handling post request");
         StringBuilder requestBody = new StringBuilder();
         int contentLength = 0;
@@ -120,28 +128,35 @@ public class WebServer {
             }
         }
 
-        // Create the response
-        String responseContent = "<html><body><h1>Thank you for using Concordia Transfers</h1>" +
-                "<h2>Received Form Inputs:</h2>"+
-                "<p>Account: " + account + "</p>" +
-                "<p>Value: " + value + "</p>" +
-                "<p>To Account: " + toAccount + "</p>" +
-                "<p>To Value: " + toValue + "</p>" +
-                "</body></html>";
+        // Process the fund transfer
+        if (account != null && value != null && toAccount != null && toValue != null) {
+            int amount = Integer.parseInt(value);
+            int toAmount = Integer.parseInt(toValue);
 
-        // Respond with the received form inputs
-        String response = "HTTP/1.1 200 OK\r\n" +
-                "Content-Length: " + responseContent.length() + "\r\n" +
-                "Content-Type: text/html\r\n\r\n" +
-                responseContent;
+            AccountManager.transferFunds(account, amount, toAccount, toAmount);
 
-        out.write(response.getBytes());
-        out.flush();
+            // Respond with the received form inputs
+            String responseContent = "<html><body><h1>Thank you for using Concordia Transfers</h1>" +
+                    "<h2>Received Form Inputs:</h2>" +
+                    "<p>Account: " + account + "</p>" +
+                    "<p>Value: " + value + "</p>" +
+                    "<p>To Account: " + toAccount + "</p>" +
+                    "<p>To Value: " + toValue + "</p>" +
+                    "</body></html>";
+
+            String response = "HTTP/1.1 200 OK\r\n" +
+                    "Content-Length: " + responseContent.length() + "\r\n" +
+                    "Content-Type: text/html\r\n\r\n" +
+                    responseContent;
+
+            out.write(response.getBytes());
+            out.flush();
+        }
     }
 
     public static void main(String[] args) {
-        //Start the server, if an exception occurs, print the stack trace
-        WebServer server = new WebServer();
+        // Start the server with a thread pool size of 10
+        WebServer server = new WebServer(10);
         try {
             server.start();
         } catch (IOException e) {
@@ -149,4 +164,3 @@ public class WebServer {
         }
     }
 }
-
