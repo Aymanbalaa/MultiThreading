@@ -4,6 +4,8 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URLDecoder;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -14,7 +16,7 @@ public class WebServer {
     public WebServer(int poolSize) {
         this.executorService = Executors.newFixedThreadPool(poolSize);
     }
-
+    private static Map<Integer, Account> accountMap = new HashMap<>();
     public void start() throws IOException {
         ServerSocket serverSocket = new ServerSocket(5000);
         while (true) {
@@ -71,9 +73,6 @@ public class WebServer {
                 "        <label for=\"toAccount\">To Account:</label>\n" +
                 "        <input type=\"text\" id=\"toAccount\" name=\"toAccount\"><br><br>\n" +
                 "\n" +
-                "        <label for=\"toValue\">To Value:</label>\n" +
-                "        <input type=\"text\" id=\"toValue\" name=\"toValue\"><br><br>\n" +
-                "\n" +
                 "        <input type=\"submit\" value=\"Submit\">\n" +
                 "    </form>\n" +
                 "</body>\n" +
@@ -81,6 +80,8 @@ public class WebServer {
         out.write(response.getBytes());
         out.flush();
     }
+
+
 
     private void handlePostRequest(BufferedReader in, OutputStream out) throws IOException {
         System.out.println("Handling post request");
@@ -121,46 +122,121 @@ public class WebServer {
                     case "toAccount":
                         toAccount = val;
                         break;
-                    case "toValue":
-                        toValue = val;
-                        break;
                 }
             }
         }
 
-        // Process the fund transfer
-        if (account != null && value != null && toAccount != null && toValue != null) {
-            int amount = Integer.parseInt(value);
-            int toAmount = Integer.parseInt(toValue);
+        String responseContent = "<html><body><h1>Thank you for using Concordia Transfers</h1>";
+        // Check if both accounts exist
+        if (account != null && toAccount != null && value != null) {
+            boolean sourceAccountExists = doesAccountExist(Integer.parseInt(account));
+            boolean targetAccountExists = doesAccountExist(Integer.parseInt(toAccount));
+            if (!sourceAccountExists) {
+                responseContent += "<h2>Source Account does not exist</h2>";
+                System.out.println("Account does not exist");
+            } else if (!targetAccountExists) {
+                responseContent += "<h2>Destination Account does not exist</h2>";
+                System.out.println("Destination Account does not exist");
+            } else {
+                Account source = accountMap.get(Integer.parseInt(account));
+                Account destination = accountMap.get(Integer.parseInt(toAccount));
+                int transferValue = Integer.parseInt(value);
+                if (transferValue < 0) {
+                    responseContent += "<h2>Cannot transfer negative sum</h2>";
+                    System.out.println("Cannot transfer negative sum");
+                } else if (transferValue > source.getBalance()) {
+                    responseContent += "<h2>No sufficient funds in Source Account</h2>";
+                } else {
+                    source.withdraw(transferValue);
+                    destination.deposit(transferValue);
+                    printMap();
 
-            AccountManager.transferFunds(account, amount, toAccount, toAmount);
+                    responseContent +=
+                            "<h2>Received Form Inputs:</h2>" +
+                                    "<p>Source Account: " + account + "</p>" +
+                                    "<p>Value: " + value + "</p>" +
+                                    "<p>Destination Account: " + toAccount + "</p>" +
+                                    "<p>Source Account New Balance: " + source.getBalance() + "</p>" +
+                                    "<p>Destination Account New Balance: " + destination.getBalance() + "</p>";
+                }
+            }
+        }
 
-            // Respond with the received form inputs
-            String responseContent = "<html><body><h1>Thank you for using Concordia Transfers</h1>" +
-                    "<h2>Received Form Inputs:</h2>" +
-                    "<p>Account: " + account + "</p>" +
-                    "<p>Value: " + value + "</p>" +
-                    "<p>To Account: " + toAccount + "</p>" +
-                    "<p>To Value: " + toValue + "</p>" +
-                    "</body></html>";
+        // Create the response
+        String response = "HTTP/1.1 200 OK\r\n" +
+                "Content-Length: " + responseContent.length() + "\r\n" +
+                "Content-Type: text/html\r\n\r\n" +
+                responseContent + "</body></html>";
 
-            String response = "HTTP/1.1 200 OK\r\n" +
-                    "Content-Length: " + responseContent.length() + "\r\n" +
-                    "Content-Type: text/html\r\n\r\n" +
-                    responseContent;
+        out.write(response.getBytes());
+        out.flush();
+    }
 
-            out.write(response.getBytes());
-            out.flush();
+    public static Map<Integer, Account> readFile(String filePath) {
+        Map<Integer, Account> accountMap = new HashMap<>();
+
+        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            boolean firstLine = true;
+
+            while ((line = br.readLine()) != null) {
+                if (firstLine) {
+                    // Skip the first line (header)
+                    firstLine = false;
+                    continue;
+                }
+
+                // Split the line into account ID and balance
+                String[] parts = line.split(",");
+                int accountId = Integer.parseInt(parts[0].trim());
+                int balance = Integer.parseInt(parts[1].trim());
+
+                // Create an Account object and put it into the HashMap
+                Account account = new Account(balance, accountId);
+                accountMap.put(accountId, account);
+            }
+        } catch (IOException | NumberFormatException e) {
+            e.printStackTrace(); // Handle exceptions appropriately
+        }
+
+        return accountMap;
+    }
+
+    // check if account exists
+    public boolean doesAccountExist(int accountId) {
+        return accountMap.containsKey(accountId);
+    }
+
+    public static void printMap() {
+        for (Map.Entry<Integer, Account> entry : accountMap.entrySet()) {
+            int accountId = entry.getKey();
+            Account account = entry.getValue();
+            int balance = account.getBalance();
+
+            System.out.println("Account ID: " + accountId + ", Balance: " + balance);
         }
     }
 
+
     public static void main(String[] args) {
-        // Start the server with a thread pool size of 10
+
+        // Setup data structure using file input
+        String filePath = "webserver/src/main/resources/details.txt";
+        accountMap = readFile(filePath);
+
+        printMap();
+
         WebServer server = new WebServer(10);
         try {
             server.start();
         } catch (IOException e) {
             e.printStackTrace();
         }
+
     }
+
+
+
+
+
 }

@@ -13,15 +13,15 @@ public class AccountManager {
         accounts.put(432, new Account(2000, 432));
     }
 
-    public static synchronized void transferFunds(String fromAccountId, int amount, String toAccountId, int toAmount) {
+    public static  void transferFunds(String fromAccountId, int amount, String toAccountId) {
         Account fromAccount = accounts.get(Integer.parseInt(fromAccountId));
         Account toAccount = accounts.get(Integer.parseInt(toAccountId));
 
-        if (fromAccount != null && toAccount != null) {
+        if (fromAccount != null) {
             // Ensure sufficient balance before transferring funds
             if (fromAccount.getBalance() >= amount) {
                 fromAccount.withdraw(amount);
-                toAccount.deposit(toAmount);
+                toAccount.deposit(amount);
             }
         }
     }
